@@ -83,7 +83,7 @@ void computePtrs(long num_expert, long rank, long world_size,
 template<typename scalar_t>
 void computeFn(py::function fn, c10::Device device,
         scalar_t* inp_buf, scalar_t* out_buf,
-        long expert_idx, long store_idx, long offset, long micro_batch_size, long d_model,
+        long expert_idx, long store_idx, long offset, long micro_batch_size, long d_model, int output_dim,
         CudaStreamManager* smgr) {
     if(micro_batch_size == 0) {
         return;
@@ -94,8 +94,8 @@ void computeFn(py::function fn, c10::Device device,
         .requires_grad(true);
     auto inp = torch::from_blob(inp_buf + offset * d_model,
             {micro_batch_size, d_model}, options);
-    auto oup = torch::from_blob(out_buf + offset * d_model,
-            {micro_batch_size, d_model}, options);
+    auto oup = torch::from_blob(out_buf + offset * output_dim,
+            {micro_batch_size, output_dim}, options);
     smgr->use_default = true;
     fn(inp, oup, expert_idx, store_idx);
     smgr->use_default = false;
@@ -120,6 +120,7 @@ void fmoe_cuda_fused_forward_impl(
         const bool* stored_models,
 
         long d_model,
+        int output_dim,
         long num_expert, long rank, long world_size, long expert_size,
         long pipeline_gran, CudaStreamManager* smgr) {
     auto torch_stream = c10::cuda::getCurrentCUDAStream().stream();
@@ -196,7 +197,7 @@ void fmoe_cuda_fused_forward_impl(
                 (from_base + pipeline_gran)] - offset;
             computeFn(forward_fn, device,
                     global_input_buf, global_output_buf,
-                    (long) ei, step * num_expert + ei, offset, micro_batch_size, d_model, smgr);
+                    (long) ei, step * num_expert + ei, offset, micro_batch_size, d_model, output_dim,smgr);
         }
         cudaEventRecord(output_ready[step], torch_stream);
     }
@@ -210,7 +211,7 @@ void fmoe_cuda_fused_forward_impl(
             long micro_batch_size = local_expert_count[i];
             computeFn(forward_fn, device,
                     input_buf, output_buf,
-                    0, n_groups * num_expert + si, offset, micro_batch_size, d_model, smgr);
+                    0, n_groups * num_expert + si, offset, micro_batch_size, d_model, output_dim,smgr);
             ++si;
         }
     }
@@ -271,6 +272,7 @@ void fmoe_cuda_fused_backward_impl(
         const long* global_expert_count,
         const bool* stored_models,
         long d_model,
+        int output_dim,
         long num_expert, long rank, long world_size,
         long pipeline_gran, CudaStreamManager* smgr) {
     auto torch_stream = c10::cuda::getCurrentCUDAStream().stream();
@@ -324,7 +326,7 @@ void fmoe_cuda_fused_backward_impl(
             long micro_batch_size = local_expert_count[i];
             computeFn(backward_fn, device,
                     grad_out, grad_in,
-                    0, n_groups * num_expert + si, offset, micro_batch_size, d_model, smgr);
+                    0, n_groups * num_expert + si, offset, micro_batch_size, d_model, output_dim,smgr);
             collect_fn(si, i / num_expert, 0);
             if (i / num_expert == rank) {
                 cudaEventCreate(evt_reduce + i % num_expert);
@@ -346,7 +348,7 @@ void fmoe_cuda_fused_backward_impl(
 
             computeFn(backward_fn, device,
                     global_grad_out, global_grad_in,
-                    (long) ei, step * num_expert + ei, offset, micro_batch_size, d_model, smgr);
+                    (long) ei, step * num_expert + ei, offset, micro_batch_size, d_model, output_dim, smgr);
         }
         cudaEventRecord(output_ready[step], torch_stream);
     }

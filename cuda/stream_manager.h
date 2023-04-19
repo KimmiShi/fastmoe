@@ -2,6 +2,7 @@
 #define CUDA_STREAM_MANAGER_H
 
 #include "utils/helper_cuda.h"
+#include <iostream>
 
 #ifdef FMOE_USE_NCCL
 #include <nccl.h>
@@ -9,7 +10,10 @@
 #define NCCL_SAFE_CALL(__fn__) { \
     auto __res__ = __fn__; \
     if (__res__ != ncclSuccess) { \
+        std::cout<< __res__ <<std::endl; \
         fprintf(stderr, "NCCL Error at %s:%d value %d\n", __FILE__, __LINE__, __res__); \
+        fprintf(stdout, "NCCL Error at %s:%d value %d\n", __FILE__, __LINE__, __res__); \
+        fflush(stderr); \
         exit(-1); \
     } \
 }

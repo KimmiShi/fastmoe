@@ -117,6 +117,8 @@ class FMoE(nn.Module):
         gate_hook=None,
         mask=None,
         mask_dict=None,
+        scan_expert_func=None,
+        **kwargs
     ):
         super().__init__()
         self.num_expert = num_expert
@@ -144,8 +146,11 @@ class FMoE(nn.Module):
             self.experts_fused = False
         else:
             self.experts_fused = True
+        if scan_expert_func is not None:
+            for n, p in self.experts.named_parameters():
+                scan_expert_func(n, p)
 
-        self.gate = gate(d_model, num_expert, world_size, top_k)
+        self.gate = gate(d_model, num_expert, world_size, top_k, **kwargs)
         self.gate_hook = gate_hook
         self.mask = mask
         self.mask_dict = mask_dict

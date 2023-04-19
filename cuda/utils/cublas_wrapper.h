@@ -2,6 +2,7 @@
 #define CUBLAS_WRAPPER_H
 #include <cublas_v2.h>
 #include <c10/util/Half.h>
+#include <c10/util/BFloat16.h>
 
 inline cublasStatus_t cublasXgemmBatched(cublasHandle_t handle,
                                   cublasOperation_t transa,
@@ -83,6 +84,35 @@ inline cublasStatus_t cublasXgemm(cublasHandle_t handle,
     return cublasHgemm(handle, transa, transb, m, n, k, alpha, A, lda, B, ldb, beta, C, ldc);
 #endif
 }
+
+inline cublasStatus_t cublasXgemm(cublasHandle_t handle,
+                                cublasOperation_t transa, cublasOperation_t transb,
+                                int m, int n, int k,
+                                const c10::BFloat16 *alpha,
+                                const c10::BFloat16 *A, int lda,
+                                const c10::BFloat16 *B, int ldb,
+                                const c10::BFloat16 *beta,
+                                c10::BFloat16 *C, int ldc) {
+    // return cublasHgemm(handle, transa, transb, m, n, k, 
+    //                     (const __half*)alpha, 
+    //                     (const __half*)A, lda, 
+    //                     (const __half*)B, ldb,
+    //                     (const __half*)beta, 
+    //                     (__half*)C, ldc);
+
+
+    return cublasGemmEx(handle,  transa, transb, m, n, k, 
+                        (const void*)alpha, 
+                        (const void*)A, CUDA_R_16BF, lda,
+                        (const void*)B, CUDA_R_16BF, ldb,
+                        (const void*)beta, 
+                        (void*)C, CUDA_R_16BF, ldc,
+                        CUDA_R_16BF,
+                        CUBLAS_GEMM_DEFAULT
+    );
+}
+
+
 
 inline cublasStatus_t cublasXgemm(cublasHandle_t handle,
                                 cublasOperation_t transa, cublasOperation_t transb,

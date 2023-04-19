@@ -27,6 +27,7 @@ def get_moe_group():
 
 def count_by_gate(gate, num_expert, world_size, require_pos=True):
     with torch.no_grad():
+        gate = gate.long()
         local_expert_count = torch.zeros(
             num_expert * world_size, device=gate.device, dtype=torch.int32
         )

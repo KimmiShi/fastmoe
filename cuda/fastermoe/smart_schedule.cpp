@@ -72,6 +72,7 @@ std::vector<torch::Tensor> _smart_sch_forward(
         long global_batch_size,
         long expert_size,
         long n_workers,
+        int output_dim,
         py::function forward_fn,
         py::function get_param_fn,
         py::function stash_fn,
@@ -95,8 +96,8 @@ std::vector<torch::Tensor> _smart_sch_forward(
 
     // TODO: maybe empty is faster
     auto global_input_buf = input_buf.new_zeros({global_batch_size, d_model});
-    auto global_output_buf = input_buf.new_zeros({global_batch_size, d_model});
-    auto output_buf = input_buf.new_zeros({input_buf.size(0), d_model});
+    auto global_output_buf = input_buf.new_zeros({global_batch_size, output_dim});
+    auto output_buf = input_buf.new_zeros({input_buf.size(0), output_dim});
 
     std::vector<torch::Tensor> params;
     auto stored_models_ = stored_models.data_ptr<bool>();
@@ -110,7 +111,7 @@ std::vector<torch::Tensor> _smart_sch_forward(
         }
     }
 
-    AT_DISPATCH_FLOATING_TYPES_AND_HALF(input_buf.scalar_type(),
+    AT_DISPATCH_FLOATING_TYPES_AND(at::ScalarType::BFloat16,input_buf.scalar_type(),
             "fmoe_cuda_smart_sch_forward", ([&] {
         fmoe_cuda_fused_forward_impl(
             forward_fn,
@@ -118,16 +119,14 @@ std::vector<torch::Tensor> _smart_sch_forward(
             pop_fn,
             input_buf.device(),
             params,
-
             input_buf.data_ptr<scalar_t>(),
             global_input_buf.data_ptr<scalar_t>(),
             global_output_buf.data_ptr<scalar_t>(),
             output_buf.data_ptr<scalar_t>(),
-
             local_expert_count.data_ptr<long>(),
             global_expert_count.data_ptr<long>(),
             stored_models.data_ptr<bool>(),
-            d_model, num_expert, rank, n_workers, expert_size,
+            d_model, output_dim, num_expert, rank, n_workers, expert_size,
             pipeline_gran, smgr);
     }));
     return {output_buf, global_input_buf};
@@ -141,6 +140,7 @@ torch::Tensor _smart_sch_backward(
         long buf_batch_size,
         long global_batch_size,
         long n_workers,
+        int output_dim,
         py::function backward_fn,
         py::function stash_fn,
         py::function pop_fn,
@@ -155,7 +155,7 @@ torch::Tensor _smart_sch_backward(
     auto global_grad_in = grad_out.new_zeros({global_batch_size, d_model});
     auto grad_in = grad_out.new_zeros({buf_batch_size, d_model});
 
-    AT_DISPATCH_FLOATING_TYPES_AND_HALF(grad_out.scalar_type(),
+    AT_DISPATCH_FLOATING_TYPES_AND(at::ScalarType::BFloat16, grad_out.scalar_type(),
             "fmoe_cuda_smartsch_backward", ([&] {
         fmoe_cuda_fused_backward_impl(
             backward_fn,
@@ -173,7 +173,7 @@ torch::Tensor _smart_sch_backward(
             local_expert_count.data_ptr<long>(),
             global_expert_count.data_ptr<long>(),
             stored_models.data_ptr<bool>(),
-            d_model, num_expert, rank, n_workers,
+            d_model, output_dim, num_expert, rank, n_workers,
             pipeline_gran, smgr);
     }));
     return grad_in;

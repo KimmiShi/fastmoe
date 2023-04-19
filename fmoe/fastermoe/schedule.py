@@ -26,7 +26,7 @@ class MoEForward(Function):
             num_expert,
             world_size):
         local_input_buf = _local_scatter(inp, pos_s)
-
+        # import pdb;pdb.set_trace()
         ctx.gibs = [None] * (world_size * num_expert * 2)
         ctx.gobs = [None] * (world_size * num_expert * 2)
         def _expert_forward(x, y, expert_idx, store_idx):
@@ -44,6 +44,7 @@ class MoEForward(Function):
                     y0 = expert_fn(x, torch.tensor([x.shape[0]], dtype=torch.int64), expert_idx)
             ctx.gibs[store_idx] = x
             ctx.gobs[store_idx] = y0
+            # import pdb;pdb.set_trace()
             y.copy_(y0)
 
         ctx.experts = experts
@@ -59,12 +60,12 @@ class MoEForward(Function):
         def stash_fn(params, store_idx, expert_idx):
             expert_utils.stash_expert_params(experts, params, expert_idx)
             ctx.shadows[store_idx] = params
-
+        output_dim = experts[0].output_dim
         local_output_buf, gib = fmoe_native.smart_sch_forward(
                 local_input_buf,
                 local_expert_count, global_expert_count, 
                 stored_models, fwd_batch_size, ctx.expert_size,
-                world_size, _expert_forward, get_param_fn, stash_fn, pop_fn)
+                world_size, output_dim, _expert_forward, get_param_fn, stash_fn, pop_fn)
 
         out = _local_gather(local_output_buf, pos_g, out_batch_size,
                 maybe_overlap=False)
@@ -92,6 +93,8 @@ class MoEForward(Function):
             grad_x.copy_(x.grad)
 
         experts = ctx.experts
+        output_dim = experts[0].output_dim
+
         def stash_fn(store_idx, expert_idx):
             expert_utils.stash_expert_params(experts, ctx.shadows[store_idx], expert_idx)
         pop_fn = lambda idx: expert_utils.pop_expert_params(experts, idx)
@@ -107,7 +110,7 @@ class MoEForward(Function):
                 local_expert_count, global_expert_count,
                 stored_models,
                 pos_s.shape[0], fwd_batch_size,
-                world_size,
+                world_size,output_dim,
                 _expert_backward, stash_fn, pop_fn, collect_fn, set_grad_fn)
         grad_in = _local_gather(grad_in_buf, pos_s, inp_batch_size)
 
@@ -127,7 +130,7 @@ def _fmoe_general_global_forward(inp, gate, expert_fn, n_expert, world_size, exp
         fwd_expert_count,
         fwd_batch_size,
     ) = prepare_forward(gate, n_expert, world_size)
-
+    # import pdb;pdb.set_trace()
     global policy_fn
     if policy_fn is None:
         policy_fn = get_shadow_policy(d_model=inp.shape[-1])
